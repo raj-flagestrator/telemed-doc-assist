@@ -1,0 +1,39 @@
+# Local planning / scratch (canonical specs live in Docs/)
+Planning-Docs/
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Secrets & local env
+.env
+.env.local
+**/.env
+!**/.env.example
+prototype/deploy/.env
+
+# Node / frontends
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+.vite/
+*.tsbuildinfo
+
+# Generated / tooling
+prototype/_openapi*.json
+.cursor/
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# One-off dev patch scripts (not part of the product)
+prototype/scripts/patch_*.py
+prototype/scripts/cleanup_delete_old_folder.ps1

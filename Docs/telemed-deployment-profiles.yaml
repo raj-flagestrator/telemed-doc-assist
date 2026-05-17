@@ -1,0 +1,307 @@
+version: 1
+platform: integrated-telemed
+profiles:
+  oss:
+    description: "Pure OSS-first deployment profile for pilots, sovereign installs, and cost-sensitive customers."
+    providers:
+      gateway: apisix
+      edgeProxy: nginx-oss
+      identity: keycloak
+      tenantConfig: postgres
+      relationalDb: postgresql
+      cache: valkey
+      eventBus: kafka
+      fhirStore: selfhosted-fhir
+      objectStorage: s3-compatible
+      search: opensearch
+      metrics: prometheus
+      dashboards: grafana-oss
+      logs: loki-oss
+      traces: tempo-oss
+      rtc: selfhosted-webrtc
+      turn: coturn
+      realtimeMessaging: websocket
+      mqtt: mosquitto
+      timeseries: postgresql
+      imaging: orthanc-core
+      ocr: tesseract
+      aiTriage: local
+      aiClinicalAssist: local
+      cds: internal-rules
+      sms: mock-or-local
+      email: smtp
+      push: fcm-apns
+      payments: mock-or-regional
+      insurance: mock-or-custom
+      maps: osm-osrm
+      nationalId: mock-or-gov
+      translation: local
+      secrets: k8s-secrets
+      audit: postgres-append-only
+      backups: oss-backup
+      orchestration: kubernetes
+      serviceMesh: none
+  commercial:
+    description: "Commercial-ready deployment profile for enterprise SLA, managed services, support, and regulated customers."
+    providers:
+      gateway: kong-enterprise
+      edgeProxy: nginx-plus-or-managed-lb
+      identity: keycloak-supported
+      tenantConfig: managed-postgres
+      relationalDb: managed-postgresql
+      cache: redis-commercial
+      eventBus: redpanda-or-managed-kafka
+      fhirStore: managed-fhir
+      objectStorage: commercial-s3
+      search: managed-opensearch
+      metrics: managed-prometheus
+      dashboards: grafana-enterprise-or-cloud
+      logs: managed-logs
+      traces: managed-tracing
+      rtc: managed-rtc
+      turn: managed-turn
+      realtimeMessaging: managed-realtime
+      mqtt: hivemq-enterprise
+      timeseries: managed-timeseries
+      imaging: commercial-pacs
+      ocr: commercial-ocr
+      aiTriage: vendor
+      aiClinicalAssist: vendor
+      cds: enterprise-cds
+      sms: twilio-or-enterprise-carrier
+      email: ses-or-sendgrid
+      push: fcm-apns
+      payments: stripe-or-regional
+      insurance: payer-aggregator
+      maps: google-or-mapbox
+      nationalId: certified-provider
+      translation: managed-translation
+      secrets: vault-or-cloud-secrets
+      audit: siem-or-governed-audit
+      backups: managed-backup
+      orchestration: managed-kubernetes
+      serviceMesh: istio-or-managed
+contracts:
+  gatewayProvider:
+    env: [GATEWAY_PROVIDER, GATEWAY_BASE_URL, RATE_LIMIT_PROFILE, WAF_ENABLED]
+    interface:
+      - applyRoute
+      - applyAuthPolicy
+      - applyRateLimit
+      - registerUpstream
+      - healthCheck
+  identityProvider:
+    env: [IDP_PROVIDER, OIDC_ISSUER_URL, KEYCLOAK_REALM_MODE, MFA_ENABLED]
+    interface:
+      - createUser
+      - issueToken
+      - validateToken
+      - assignRole
+      - resolveTenantTheme
+  relationalStore:
+    env: [SERVICE_DB_URL, DB_POOL_SIZE, TENANT_ISOLATION, READ_REPLICA_ENABLED]
+    interface:
+      - migrate
+      - getConnection
+      - beginTransaction
+      - commit
+      - rollback
+  cacheProvider:
+    env: [CACHE_PROVIDER, CACHE_URL, CACHE_TLS, LOCK_BACKEND]
+    interface:
+      - get
+      - set
+      - delete
+      - lock
+      - unlock
+      - publish
+      - subscribe
+  eventBusProvider:
+    env: [EVENT_BUS_PROVIDER, BOOTSTRAP_SERVERS, SCHEMA_REGISTRY_URL, TOPIC_PREFIX, DLQ_ENABLED]
+    interface:
+      - publishEvent
+      - consumeEvent
+      - createTopic
+      - replayTopic
+      - deadLetter
+  clinicalInteropStore:
+    env: [FHIR_PROVIDER, FHIR_BASE_URL, FHIR_VERSION, FHIR_BULK_EXPORT]
+    interface:
+      - upsertResource
+      - readResource
+      - searchResource
+      - transactionBundle
+      - exportBulk
+  objectStorageProvider:
+    env: [OBJECT_STORAGE_PROVIDER, S3_ENDPOINT, S3_BUCKET, S3_PATH_STYLE, KMS_KEY_ID]
+    interface:
+      - putObject
+      - getObject
+      - deleteObject
+      - generateSignedUrl
+      - setRetention
+  searchProvider:
+    env: [SEARCH_PROVIDER, SEARCH_URL, INDEX_PREFIX, SEARCH_ILM_POLICY]
+    interface:
+      - indexDocument
+      - search
+      - deleteDocument
+      - createIndex
+  metricsProvider:
+    env: [METRICS_PROVIDER, PROM_SCRAPE, RETENTION_DAYS]
+    interface:
+      - increment
+      - observe
+      - gauge
+      - expose
+  logProvider:
+    env: [LOG_PROVIDER, LOG_RETENTION_DAYS, PII_REDACTION]
+    interface:
+      - writeLog
+      - queryLogs
+      - redact
+  traceProvider:
+    env: [TRACE_PROVIDER, OTEL_EXPORTER_OTLP_ENDPOINT, TRACE_SAMPLING_RATE]
+    interface:
+      - startSpan
+      - addEvent
+      - closeSpan
+  rtcProvider:
+    env: [RTC_PROVIDER, SFU_URL, RECORDING_ENABLED]
+    interface:
+      - createRoom
+      - issueParticipantToken
+      - endRoom
+      - startRecording
+      - stopRecording
+  turnProvider:
+    env: [TURN_PROVIDER, TURN_URL, TURN_SHARED_SECRET, TURN_REALM, TURN_TLS]
+    interface:
+      - issueTurnCredentials
+      - validateTurnHealth
+  mqttProvider:
+    env: [MQTT_PROVIDER, MQTT_TLS, MQTT_QOS, DEVICE_AUTH]
+    interface:
+      - publishTelemetry
+      - subscribeTelemetry
+      - registerDevice
+      - disconnectDevice
+  timeseriesProvider:
+    env: [TS_PROVIDER, TS_RETENTION_DAYS, TS_DOWNSAMPLE_POLICY]
+    interface:
+      - writeMeasurement
+      - queryRange
+      - aggregate
+  imagingArchiveProvider:
+    env: [IMAGING_PROVIDER, DICOMWEB_ENABLED, PACS_ENDPOINT]
+    interface:
+      - storeStudy
+      - fetchStudy
+      - fetchSeries
+      - fetchInstance
+  ocrProvider:
+    env: [OCR_PROVIDER, OCR_LANGS, OCR_ASYNC]
+    interface:
+      - extractText
+      - extractStructuredData
+  aiTriageProvider:
+    env: [AI_TRIAGE_PROVIDER, MODEL_NAME, AI_DISABLED_BY_TENANT, AI_AUDIT]
+    interface:
+      - assessSymptoms
+      - riskScore
+      - explain
+  aiClinicalAssistProvider:
+    env: [AI_CLINICAL_PROVIDER, AI_CONFIDENCE_THRESHOLD, HUMAN_REVIEW_REQUIRED]
+    interface:
+      - summarizeEncounter
+      - suggestDifferentials
+      - extractFindings
+      - explain
+  clinicalRulesProvider:
+    env: [CDS_PROVIDER, RULESET_VERSION, DRUG_INTERACTION_ENABLED]
+    interface:
+      - evaluateRule
+      - checkDrugInteraction
+      - recommendEscalation
+  smsProvider:
+    env: [SMS_PROVIDER, OTP_CHANNEL, OTP_TTL_SEC]
+    interface:
+      - sendOtp
+      - sendMessage
+  emailProvider:
+    env: [EMAIL_PROVIDER, EMAIL_FROM, SMTP_URL]
+    interface:
+      - sendEmail
+      - renderTemplate
+  pushProvider:
+    env: [PUSH_PROVIDER, APNS_ENABLED]
+    interface:
+      - sendPush
+      - registerDeviceToken
+  paymentProvider:
+    env: [PAYMENT_PROVIDER, PAYMENT_CURRENCY, PAYMENT_CAPTURE_MODE]
+    interface:
+      - createPayment
+      - capturePayment
+      - refundPayment
+  insuranceProvider:
+    env: [INSURANCE_PROVIDER, PREAUTH_ENABLED]
+    interface:
+      - checkEligibility
+      - submitPreauth
+      - getCoverage
+  geoProvider:
+    env: [MAP_PROVIDER, ROUTING_PROVIDER, LIVE_TRACKING]
+    interface:
+      - geocode
+      - route
+      - reverseGeocode
+  translationProvider:
+    env: [I18N_PROVIDER, DEFAULT_LANG, SUPPORTED_LANGS]
+    interface:
+      - translate
+      - detectLanguage
+      - listSupportedLanguages
+  secretsProvider:
+    env: [SECRETS_PROVIDER, SECRET_ROTATION_DAYS, KMS_ENABLED]
+    interface:
+      - getSecret
+      - setSecret
+      - rotateSecret
+  auditProvider:
+    env: [AUDIT_PROVIDER, AUDIT_IMMUTABLE, AUDIT_RETENTION_YEARS]
+    interface:
+      - writeAuditEvent
+      - queryAuditEvent
+      - exportAudit
+  backupProvider:
+    env: [BACKUP_PROVIDER, BACKUP_SCHEDULE, PITR_ENABLED]
+    interface:
+      - backup
+      - restore
+      - validateRestore
+services:
+  patientApp:
+    requiredContracts: [identityProvider, gatewayProvider, paymentProvider, pushProvider, rtcProvider, objectStorageProvider]
+  doctorPortal:
+    requiredContracts: [identityProvider, gatewayProvider, rtcProvider, clinicalInteropStore, aiClinicalAssistProvider, clinicalRulesProvider]
+  pharmacyPortal:
+    requiredContracts: [identityProvider, gatewayProvider, searchProvider, insuranceProvider, geoProvider]
+  governmentDashboard:
+    requiredContracts: [identityProvider, gatewayProvider, metricsProvider, searchProvider, auditProvider]
+  patientService:
+    requiredContracts: [relationalStore, clinicalInteropStore, auditProvider]
+  appointmentService:
+    requiredContracts: [relationalStore, eventBusProvider, notificationProvider]
+  consultationService:
+    requiredContracts: [relationalStore, eventBusProvider, rtcProvider, clinicalInteropStore, auditProvider]
+  prescriptionService:
+    requiredContracts: [relationalStore, clinicalInteropStore, objectStorageProvider, auditProvider]
+  pharmacyService:
+    requiredContracts: [relationalStore, searchProvider, insuranceProvider, eventBusProvider]
+  rpmService:
+    requiredContracts: [mqttProvider, timeseriesProvider, eventBusProvider, clinicalRulesProvider]
+notes:
+  - "Keep application images identical across profiles; switch providers through Helm values, Compose overrides, and environment variables."
+  - "Avoid vendor-specific features in business services unless wrapped behind one of the contracts above."
+  - "Treat AGPL or source-available components as policy-reviewed dependencies before defaulting them into the OSS profile."

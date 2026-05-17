@@ -1,0 +1,386 @@
+# MediSphere prototype — full microservices stack
+# From prototype/:  docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build
+#
+# Portals (host):  patient :5173  doctor :5174  pharmacy :5175
+# BFF APIs:       patient :4100  doctor :4101  pharmacy :4102
+# Postgres:       :5434
+
+name: medisphere-prototype
+
+x-api-build: &api-build
+  context: ..
+  dockerfile: deploy/Dockerfile.api
+
+x-api-env: &api-env
+  DATABASE_URL: postgresql://${POSTGRES_USER:-medisphere}:${POSTGRES_PASSWORD:-medisphere}@postgres:5432/${POSTGRES_DB:-medisphere}
+  JWT_SECRET: ${JWT_SECRET:-prototype-dev-secret}
+  DEFAULT_TENANT_ID: ${DEFAULT_TENANT_ID:-demo-maldives}
+
+x-bff-env: &bff-env
+  <<: *api-env
+  IDENTITY_SERVICE_URL: http://identity-service:4001
+  TENANT_CONFIG_SERVICE_URL: http://tenant-config-service:4002
+  PATIENT_SERVICE_URL: http://patient-service:4003
+  APPOINTMENT_SERVICE_URL: http://appointment-service:4004
+  CONSULTATION_SERVICE_URL: http://consultation-service:4005
+  PRESCRIPTION_SERVICE_URL: http://prescription-service:4006
+  AI_TRIAGE_SERVICE_URL: http://ai-triage-service:4007
+  DELIVERY_SERVICE_URL: http://delivery-service:4008
+  PHARMACY_SERVICE_URL: http://pharmacy-service:4009
+
+x-api-health: &api-health
+  interval: 10s
+  timeout: 5s
+  retries: 8
+  start_period: 25s
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: medisphere-prototype-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-medisphere}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-medisphere}
+      POSTGRES_DB: ${POSTGRES_DB:-medisphere}
+    command: ["postgres", "-c", "max_connections=200"]
+    ports:
+      - "${POSTGRES_HOST_PORT:-5434}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-medisphere} -d ${POSTGRES_DB:-medisphere}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks:
+      - medisphere
+
+  identity-service:
+    build: *api-build
+    environment:
+      <<: *api-env
+    command: ["uvicorn", "services.identity_service.app:app", "--host", "0.0.0.0", "--port", "4001"]
+    ports:
+      - "4001:4001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      <<: *api-health
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:4001/health"]
+    restart: unless-stopped
+    networks:
+      - medisphere
+
+  tenant-config-service:
+    build: *api-build
+    environment:
+      <<: *api-env
+    command:
+      ["uvicorn", "services.tenant_config_service.app:app", "--host", "0.0.0.0", "--port", "4002"]
+    ports:
+      - "4002:4002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      <<: *api-health
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:4002/health"]
+    restart: unless-stopped
+    networks:
+      - medisphere
+
+  patient-service:
+    build: *api-build
+    environment:
+      <<: *api-env
+    command: ["uvicorn", "services.patient_service.app:app", "--host", "0.0.0.0", "--port", "4003"]
+    ports:
+      - "4003:4003"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      <<: *api-health
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:4003/health"]
+    restart: unless-stopped
+    networks:
+      - medisphere
+
+  appointment-service:
+    build: *api-build
+    environment:
+      <<: *api-env
+    command:
+      ["uvicorn", "services.appointment_service.app:app", "--host", "0.0.0.0", "--port", "4004"]
+    ports:
+      - "4004:4004"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      <<: *api-health
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:4004/health"]
+    restart: unless-stopped
+    networks:
+      - medisphere
+
+  consultation-service:
+    build: *api-build
+    environment:
+      <<: *api-env
+    command:
+      ["uvicorn", "services.consultation_service.app:app", "--host", "0.0.0.0", "--port", "4005"]
+    ports:
+      - "4005:4005"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      <<: *api-health
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:4005/health"]
+    restart: unless-stopped
+    networks:
+      - medisphere
+
+  prescription-service:
+    build: *api-build
+    environment:
+      <<: *api-env
+    command:
+      ["uvicorn", "services.prescription_service.app:app", "--host", "0.0.0.0", "--port", "4006"]
+    ports:
+      - "4006:4006"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      <<: *api-health
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:4006/health"]
+    restart: unless-stopped
+    networks:
+      - medisphere
+
+  ai-triage-service:
+    build: *api-build
+    environment:
+      <<: *api-env
+    command: ["uvicorn", "services.ai_triage_service.app:app", "--host", "0.0.0.0", "--port", "4007"]
+    ports:
+      - "4007:4007"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      <<: *api-health
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:4007/health"]
+    restart: unless-stopped
+    networks:
+      - medisphere
+
+  delivery-service:
+    build: *api-build
+    environment:
+      <<: *api-env
+    command: ["uvicorn", "services.delivery_service.app:app", "--host", "0.0.0.0", "--port", "4008"]
+    ports:
+      - "4008:4008"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      <<: *api-health
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:4008/health"]
+    restart: unless-stopped
+    networks:
+      - medisphere
+
+  pharmacy-service:
+    build: *api-build
+    environment:
+      <<: *api-env
+    command: ["uvicorn", "services.pharmacy_service.app:app", "--host", "0.0.0.0", "--port", "4009"]
+    ports:
+      - "4009:4009"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      patient-service:
+        condition: service_healthy
+      prescription-service:
+        condition: service_healthy
+    healthcheck:
+      <<: *api-health
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:4009/health"]
+    restart: unless-stopped
+    networks:
+      - medisphere
+
+  patient-bff:
+    build: *api-build
+    environment:
+      <<: *bff-env
+    command: ["uvicorn", "bff.patient_bff.app:app", "--host", "0.0.0.0", "--port", "4100"]
+    ports:
+      - "${PATIENT_BFF_HOST_PORT:-4100}:4100"
+    depends_on:
+      identity-service:
+        condition: service_healthy
+      tenant-config-service:
+        condition: service_healthy
+      patient-service:
+        condition: service_healthy
+      appointment-service:
+        condition: service_healthy
+      consultation-service:
+        condition: service_healthy
+      prescription-service:
+        condition: service_healthy
+      ai-triage-service:
+        condition: service_healthy
+      delivery-service:
+        condition: service_healthy
+    healthcheck:
+      <<: *api-health
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:4100/health"]
+    restart: unless-stopped
+    networks:
+      - medisphere
+
+  doctor-bff:
+    build: *api-build
+    environment:
+      <<: *bff-env
+    command: ["uvicorn", "bff.doctor_bff.app:app", "--host", "0.0.0.0", "--port", "4101"]
+    ports:
+      - "${DOCTOR_BFF_HOST_PORT:-4101}:4101"
+    depends_on:
+      identity-service:
+        condition: service_healthy
+      tenant-config-service:
+        condition: service_healthy
+      patient-service:
+        condition: service_healthy
+      appointment-service:
+        condition: service_healthy
+      consultation-service:
+        condition: service_healthy
+      prescription-service:
+        condition: service_healthy
+      ai-triage-service:
+        condition: service_healthy
+      delivery-service:
+        condition: service_healthy
+      pharmacy-service:
+        condition: service_healthy
+    healthcheck:
+      <<: *api-health
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:4101/health"]
+    restart: unless-stopped
+    networks:
+      - medisphere
+
+  pharmacy-bff:
+    build: *api-build
+    environment:
+      <<: *bff-env
+    command: ["uvicorn", "bff.pharmacy_bff.app:app", "--host", "0.0.0.0", "--port", "4102"]
+    ports:
+      - "${PHARMACY_BFF_HOST_PORT:-4102}:4102"
+    depends_on:
+      identity-service:
+        condition: service_healthy
+      tenant-config-service:
+        condition: service_healthy
+      patient-service:
+        condition: service_healthy
+      prescription-service:
+        condition: service_healthy
+      delivery-service:
+        condition: service_healthy
+      pharmacy-service:
+        condition: service_healthy
+    healthcheck:
+      <<: *api-health
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:4102/health"]
+    restart: unless-stopped
+    networks:
+      - medisphere
+
+  patient-web:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.web
+      args:
+        APP_NAME: patient-web
+        VITE_API_BASE_URL: ${PATIENT_WEB_API_URL:-http://localhost:4100}
+    ports:
+      - "${PATIENT_WEB_HOST_PORT:-5173}:80"
+    depends_on:
+      patient-bff:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - medisphere
+
+  doctor-web:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.web
+      args:
+        APP_NAME: doctor-web
+        VITE_API_BASE_URL: ${DOCTOR_WEB_API_URL:-http://localhost:4101}
+    ports:
+      - "${DOCTOR_WEB_HOST_PORT:-5174}:80"
+    depends_on:
+      doctor-bff:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - medisphere
+
+  pharmacy-web:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.web
+      args:
+        APP_NAME: pharmacy-web
+        VITE_API_BASE_URL: ${PHARMACY_WEB_API_URL:-http://localhost:4102}
+    ports:
+      - "${PHARMACY_WEB_HOST_PORT:-5175}:80"
+    depends_on:
+      pharmacy-bff:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - medisphere
+
+networks:
+  medisphere:
+    name: medisphere-prototype
+
+volumes:
+  postgres_data:
+    name: medisphere-prototype-postgres
