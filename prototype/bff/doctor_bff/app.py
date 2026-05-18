@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from typing import Literal
+
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from medisphere.app_factory import create_app
@@ -416,4 +418,211 @@ async def pharmacy_override(
         json=body.model_dump(),
         token=token,
         tenant_id=settings.default_tenant_id,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Clinical Copilot (AI chatbot)
+# ---------------------------------------------------------------------------
+
+COPILOT_SYSTEM_PREAMBLE = """You are MediSphere Clinical Copilot, an AI assistant for a
+licensed physician using a telemedicine platform in the Maldives. You speak directly
+to the doctor (never the patient).
+
+Your job:
+- Help the doctor reason about the case faster: summarize, generate differentials,
+  suggest investigations, flag red flags, check drug interactions, and draft notes.
+- Be concise, structured, and clinical. Prefer bullet lists. Reference guideline
+  thinking (NICE / WHO / ACC) where relevant but do not fabricate citations.
+- When uncertain, say so and ask the doctor a focused follow-up question.
+
+Hard rules:
+- This is decision support. The doctor is the responsible clinician and makes the
+  final call. Do not refuse to discuss differentials, dosing, or risk - that is the
+  whole point of the tool.
+- Never address the patient or produce patient-facing language unless the doctor
+  explicitly asks for a patient-friendly summary.
+- If the doctor asks something outside clinical context (jokes, code, unrelated),
+  briefly redirect back to the case.
+
+Format default: short bullets, then a one-line "Suggested next step:" when useful."""
+
+
+def _format_patient_context(
+    appointment: dict,
+    patient: dict,
+    triage: dict | None,
+    consultation: dict | None,
+    prescription: dict | None,
+) -> str:
+    lines: list[str] = ["", "## Current patient context", ""]
+
+    lines.append(f"- Name: {patient.get('fullName', '—')}")
+    lines.append(f"- Phone: {patient.get('phone', '—')}")
+    lines.append(f"- Island: {patient.get('island') or '—'}")
+    lines.append(f"- National ID: {patient.get('nationalId') or '—'}")
+    lines.append(f"- Insurance: {patient.get('insuranceId') or '—'}")
+
+    lines.append("")
+    lines.append("### Appointment")
+    lines.append(f"- ID: {appointment.get('id')}")
+    lines.append(f"- Specialty: {appointment.get('specialty', '—')}")
+    lines.append(f"- Language: {appointment.get('language', '—')}")
+    lines.append(f"- Scheduled: {appointment.get('startAt', '—')}")
+    lines.append(f"- Status: {appointment.get('status', '—')}")
+
+    if triage:
+        symptoms = triage.get("symptoms") or []
+        result = triage.get("result") or {}
+        lines.append("")
+        lines.append("### AI triage assessment")
+        lines.append(f"- Reported symptoms: {', '.join(symptoms) if symptoms else '—'}")
+        lines.append(f"- Risk level: {result.get('riskLevel', '—')} (score {result.get('riskScore', '—')})")
+        lines.append(f"- Recommended specialty: {result.get('recommendedSpecialty', '—')}")
+        if result.get("recommendedAction"):
+            lines.append(f"- Recommended action: {result['recommendedAction']}")
+    else:
+        lines.append("")
+        lines.append("### AI triage assessment")
+        lines.append("- No triage on file.")
+
+    if consultation:
+        lines.append("")
+        lines.append("### Consultation")
+        lines.append(f"- Status: {consultation.get('status', '—')}")
+        notes = (consultation.get("notes") or "").strip()
+        if notes:
+            lines.append(f"- Doctor notes so far: {notes}")
+        if consultation.get("completedAt"):
+            lines.append(f"- Completed: {consultation['completedAt']}")
+
+    if prescription:
+        meds = prescription.get("medications") or []
+        lines.append("")
+        lines.append("### Prescription on file")
+        lines.append(f"- Status: {prescription.get('status', '—')}")
+        if prescription.get("pharmacyName"):
+            lines.append(f"- Pharmacy: {prescription['pharmacyName']}")
+        for m in meds:
+            lines.append(
+                f"  * {m.get('name')} — {m.get('dosage')}, {m.get('frequency')}, {m.get('duration')}"
+            )
+
+    return "\n".join(lines)
+
+
+async def _build_appointment_context(appointment_id: str, token: str) -> str:
+    """Reassemble visit context (cheaper subset of appointment_detail, no delivery)."""
+    appt = await service_fetch(
+        settings.appointment_service_url,
+        f"/api/v1/appointments/{appointment_id}",
+        token=token,
+        tenant_id=settings.default_tenant_id,
+    )
+    patient = await service_fetch(
+        settings.patient_service_url,
+        f"/api/v1/patients/{appt['patientId']}",
+        token=token,
+        tenant_id=settings.default_tenant_id,
+    )
+    consult_wrap = await service_fetch(
+        settings.consultation_service_url,
+        f"/api/v1/consultations/by-appointment/{appointment_id}",
+        token=token,
+        tenant_id=settings.default_tenant_id,
+    )
+    triage_wrap = await service_fetch(
+        settings.ai_triage_service_url,
+        f"/api/v1/triage/patient/{appt['patientId']}/latest",
+        token=token,
+        tenant_id=settings.default_tenant_id,
+    )
+    consultation = consult_wrap.get("consultation")
+    prescription = None
+    if consultation and consultation.get("id"):
+        try:
+            rx_wrap = await service_fetch(
+                settings.prescription_service_url,
+                f"/api/v1/prescriptions/by-consultation/{consultation['id']}",
+                token=token,
+                tenant_id=settings.default_tenant_id,
+            )
+            prescription = rx_wrap.get("prescription")
+        except RuntimeError:
+            prescription = None
+    return _format_patient_context(
+        appt, patient, triage_wrap.get("assessment"), consultation, prescription
+    )
+
+
+class CopilotMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1)
+
+
+class CopilotChatBody(BaseModel):
+    appointmentId: str | None = None
+    messages: list[CopilotMessage] = Field(min_length=1)
+    extraInstructions: str | None = None
+
+
+@app.get("/api/v1/copilot/info")
+async def copilot_info(token: str = Depends(_token)):
+    auth = decode_token(token)
+    if "doctor" not in (auth.get("roles") or []):
+        raise HTTPException(403, "Doctor access only")
+    try:
+        return await service_fetch(
+            settings.clinical_copilot_service_url,
+            "/api/v1/copilot/info",
+        )
+    except RuntimeError as exc:
+        return {"configured": False, "error": str(exc)}
+
+
+@app.post("/api/v1/copilot/chat")
+async def copilot_chat(body: CopilotChatBody, token: str = Depends(_token)):
+    auth = decode_token(token)
+    if "doctor" not in (auth.get("roles") or []):
+        raise HTTPException(403, "Doctor access only")
+
+    system = COPILOT_SYSTEM_PREAMBLE
+    if body.appointmentId:
+        try:
+            ctx = await _build_appointment_context(body.appointmentId, token)
+            system = f"{system}\n{ctx}"
+        except RuntimeError as exc:
+            system = f"{system}\n\n(Note: context lookup failed: {exc})"
+    if body.extraInstructions:
+        system = f"{system}\n\n## Extra instructions from doctor\n{body.extraInstructions}"
+
+    payload = {
+        "system": system,
+        "messages": [m.model_dump() for m in body.messages],
+    }
+
+    async def relay() -> "httpx.AsyncIterator[bytes]":
+        async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, read=120.0)) as client:
+            async with client.stream(
+                "POST",
+                f"{settings.clinical_copilot_service_url}/api/v1/copilot/chat",
+                json=payload,
+                headers={"Accept": "text/event-stream"},
+            ) as upstream:
+                if upstream.status_code >= 400:
+                    err_text = (await upstream.aread()).decode("utf-8", "ignore")
+                    yield f'data: {{"type":"error","message":{err_text!r}}}\n\n'.encode()
+                    return
+                async for chunk in upstream.aiter_raw():
+                    if chunk:
+                        yield chunk
+
+    return StreamingResponse(
+        relay(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )

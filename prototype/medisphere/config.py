@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     ai_triage_service_url: str = "http://localhost:4007"
     delivery_service_url: str = "http://localhost:4008"
     pharmacy_service_url: str = "http://localhost:4009"
+    clinical_copilot_service_url: str = "http://localhost:4010"
     patient_bff_port: int = 4100
     doctor_bff_port: int = 4101
     pharmacy_bff_port: int = 4102

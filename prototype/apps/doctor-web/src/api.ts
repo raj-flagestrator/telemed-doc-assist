@@ -1,4 +1,5 @@
-const API = import.meta.env.VITE_API_BASE_URL ?? "";
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
+const API = API_BASE_URL;
 
 function headers(token?: string): HeadersInit {
   const h: Record<string, string> = { "Content-Type": "application/json" };
@@ -190,7 +191,64 @@ export const api = {
       `/api/v1/prescriptions/${prescriptionId}/pharmacy-override`,
       { method: "POST", token, body: JSON.stringify({ pharmacyId }) }
     ),
+  getCopilotInfo: (token: string) =>
+    request<{ configured: boolean; model?: string; error?: string }>("/api/v1/copilot/info", {
+      token,
+    }),
 };
+
+export interface CopilotMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export type CopilotStreamEvent =
+  | { type: "delta"; text: string }
+  | { type: "done"; stopReason?: string; inputTokens?: number; outputTokens?: number }
+  | { type: "error"; message: string };
+
+export async function streamCopilotChat(
+  token: string,
+  body: { appointmentId?: string; messages: CopilotMessage[]; extraInstructions?: string },
+  onEvent: (event: CopilotStreamEvent) => void,
+  signal?: AbortSignal
+): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/copilot/chat`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+      Accept: "text/event-stream",
+    },
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!res.ok || !res.body) {
+    const detail = await res.text().catch(() => res.statusText);
+    throw new Error(detail || `Copilot HTTP ${res.status}`);
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder("utf-8");
+  let buffer = "";
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let idx;
+    while ((idx = buffer.indexOf("\n\n")) >= 0) {
+      const raw = buffer.slice(0, idx).trim();
+      buffer = buffer.slice(idx + 2);
+      if (!raw.startsWith("data:")) continue;
+      const json = raw.slice(5).trim();
+      if (!json) continue;
+      try {
+        onEvent(JSON.parse(json) as CopilotStreamEvent);
+      } catch {
+        // ignore malformed frame
+      }
+    }
+  }
+}
 
 export interface RoutingEvent {
   at: string;

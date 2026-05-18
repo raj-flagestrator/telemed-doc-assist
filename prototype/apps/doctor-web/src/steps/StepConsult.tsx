@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api } from "../api";
 import { AppointmentId } from "../components/AppointmentId";
+import { CopilotPanel } from "../components/CopilotPanel";
 import { useApp } from "../context/AppContext";
 
 export function StepConsult() {
@@ -67,6 +68,7 @@ export function StepConsult() {
           </div>
         </>
       )}
+      <CopilotPanel appointmentId={visit.appointmentId} patientName={visit.patientName} />
     </section>
   );
 }

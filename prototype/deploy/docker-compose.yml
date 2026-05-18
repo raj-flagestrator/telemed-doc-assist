@@ -27,6 +27,7 @@ x-bff-env: &bff-env
   AI_TRIAGE_SERVICE_URL: http://ai-triage-service:4007
   DELIVERY_SERVICE_URL: http://delivery-service:4008
   PHARMACY_SERVICE_URL: http://pharmacy-service:4009
+  CLINICAL_COPILOT_SERVICE_URL: http://clinical-copilot-service:4010
 
 x-api-health: &api-health
   interval: 10s
@@ -220,6 +221,24 @@ services:
     networks:
       - medisphere
 
+  clinical-copilot-service:
+    build: *api-build
+    environment:
+      <<: *api-env
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-5}
+      ANTHROPIC_MAX_TOKENS: ${ANTHROPIC_MAX_TOKENS:-2048}
+    command:
+      ["uvicorn", "services.clinical_copilot_service.app:app", "--host", "0.0.0.0", "--port", "4010"]
+    ports:
+      - "4010:4010"
+    healthcheck:
+      <<: *api-health
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:4010/health"]
+    restart: unless-stopped
+    networks:
+      - medisphere
+
   patient-bff:
     build: *api-build
     environment:
@@ -276,6 +295,8 @@ services:
       delivery-service:
         condition: service_healthy
       pharmacy-service:
+        condition: service_healthy
+      clinical-copilot-service:
         condition: service_healthy
     healthcheck:
       <<: *api-health

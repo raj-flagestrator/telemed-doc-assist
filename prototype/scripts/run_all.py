@@ -39,6 +39,7 @@ SERVICES: list[tuple[str, int]] = [
     ("services.ai_triage_service.app:app", 4007),
     ("services.delivery_service.app:app", 4008),
     ("services.pharmacy_service.app:app", 4009),
+    ("services.clinical_copilot_service.app:app", 4010),
     ("bff.patient_bff.app:app", 4100),
     ("bff.doctor_bff.app:app", 4101),
     ("bff.pharmacy_bff.app:app", 4102),

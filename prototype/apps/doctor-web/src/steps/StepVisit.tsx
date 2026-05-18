@@ -5,6 +5,7 @@ import { api, type AppointmentDetail } from "../api";
 import { useApp } from "../context/AppContext";
 
 import { AppointmentId } from "../components/AppointmentId";
+import { CopilotPanel } from "../components/CopilotPanel";
 import { PrescriptionTrackingId } from "../components/PrescriptionTrackingId";
 import { visitStatusClass, visitStatusLabel } from "../lib/visitStatus";
 
@@ -295,6 +296,11 @@ export function StepVisit() {
         </button>
 
       )}
+
+      <CopilotPanel
+        appointmentId={visit.appointmentId ?? detail.appointment.id}
+        patientName={detail.patient.fullName}
+      />
 
     </section>
 
